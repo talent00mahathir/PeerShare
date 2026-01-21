@@ -1,0 +1,4 @@
+peer_*_data/
+network_config.json
+__pycache__/
+*.pyc
