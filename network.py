@@ -26,6 +26,7 @@ class NetworkManager:
         if peer_name_a == peer_name_b: return 0
 
         ping_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Low timeout ensures a busy peer doesn't hang the whole network update
         ping_socket.settimeout(0.2) 
 
         try:

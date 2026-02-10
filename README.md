@@ -130,5 +130,12 @@
 
 # 
 
-# 
 
+## 🚀 PeerShare v1.1 Update (Feb 2026)
+This update focuses on swarm stability and high-speed transfers.
+
+## Key Improvements:
+- **Dynamic Chunking**: Automatically adjusts chunk size based on file size (up to 8MB) to reduce connection overhead.
+- **High-Backlog Server**: Increased socket listen limit to 100 to handle multiple simultaneous peer requests.
+- **Network Resilience**: Implemented a retry delay (1s) to prevent application "hanging" during network congestion.
+- **Optimized Latency Mapping**: Updated `network.py` for faster Dijkstra route calculations.

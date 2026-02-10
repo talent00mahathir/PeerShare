@@ -54,7 +54,8 @@ class Peer:
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             server_socket.bind((self.ip, self.port))
-            server_socket.listen(15)
+            # FIX: Increased backlog from 15 to 100 to handle rapid chunk requests
+            server_socket.listen(100) 
             while self.running:
                 client_socket, addr = server_socket.accept()
                 threading.Thread(target=self._handle_client, args=(client_socket,)).start()
@@ -147,7 +148,6 @@ class Peer:
     def swarm_download(self, filename, seeder_list):
         print(f"[{self.name}] 🚀 Initiating Swarm for '{filename}'")
         
-        # 1. Discover Size
         file_size = 0
         for peer in seeder_list:
             if peer == self.name: continue
@@ -170,54 +170,41 @@ class Peer:
             print("❌ Error: File not found in swarm.")
             return
 
-        # 2. Prepare File
         save_path = os.path.join(self.storage_folder, f"downloaded_{filename}")
         with open(save_path, 'wb') as f:
             f.seek(file_size - 1)
             f.write(b'\0')
 
-        # -----------------------------------------------------
-        # 3. DYNAMIC CHUNKING LOGIC (Your Requested Feature)
-        # -----------------------------------------------------
-        # 100MB = 100 * 1024 * 1024
-        # 1GB   = 1024 * 1024 * 1024
-        
+        # FIX: Increased chunk sizes to reduce total connection overhead
         limit_small = 100 * 1024 * 1024
         limit_large = 1024 * 1024 * 1024
 
         if file_size < limit_small:
-            chunk_size = 64 * 1024      # 64 KB for Small Files
+            chunk_size = 512 * 1024      # 512 KB
             cat_str = "Small File (<100MB)"
         elif file_size < limit_large:
-            chunk_size = 512 * 1024     # 512 KB for Medium Files
+            chunk_size = 2 * 1024 * 1024     # 2 MB
             cat_str = "Medium File (100MB-1GB)"
         else:
-            chunk_size = 2 * 1024 * 1024 # 2 MB for Large Files
+            chunk_size = 8 * 1024 * 1024 # 8 MB
             cat_str = "Large File (>1GB)"
 
         job_queue = queue.Queue()
         num_pieces = (file_size + chunk_size - 1) // chunk_size
         
-        # LOGGING
         print(f"[{self.name}] ℹ️  File Size: {file_size / (1024*1024):.2f} MB")
         print(f"[{self.name}] ℹ️  Mode: {cat_str}")
         print(f"[{self.name}] ℹ️  Chunk Size: {chunk_size / 1024:.0f} KB")
         print(f"[{self.name}] 🔢 Total Chunks: {num_pieces}")
-        # -----------------------------------------------------
 
         for i in range(num_pieces):
             start = i * chunk_size
             length = min(chunk_size, file_size - start)
             job_queue.put((start, length))
 
-        print(f"[{self.name}] 📦 Swarm Plan Created. Querying {len(seeder_list)} peers.")
-        
         threads = []
         file_lock = threading.Lock()
-        
-        # Stats tracking
         stats = {peer: 0 for peer in seeder_list if peer != self.name}
-        
         start_time = time.time()
         
         for peer in seeder_list:
@@ -230,8 +217,6 @@ class Peer:
         for t in threads: t.join(timeout=1.0)
         
         duration = time.time() - start_time
-        
-        # --- FINAL SUMMARY REPORT ---
         print("\n" + "="*40)
         print(f"   🎉 DOWNLOAD COMPLETE in {duration:.2f}s")
         print("="*40)
@@ -282,15 +267,17 @@ class Peer:
                             
                             stats[peer] += length
                             success = True
-                            
-                            # THE RUNNING LIST PRINT
                             chunk_id = (start // chunk_size) + 1
-                            print(f"[{self.name}] ✅ Chunk {chunk_id} fetched from {peer}")
-                            
+                            print(f"[{self.name}] ✅ Chunk {chunk_id} from {peer}")
                     s.close()
-            except Exception: pass
+            except Exception as e:
+                # print(f"[{self.name}] ⚠️ Peer {peer} busy, retrying chunk...")
+                pass
 
             if success:
                 job_queue.task_done()
             else:
+                # FIX: Added sleep and task_done for failed tasks to prevent CPU spin
+                time.sleep(1.0) 
                 job_queue.put((start, length))
+                job_queue.task_done()
