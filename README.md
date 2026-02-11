@@ -2,12 +2,21 @@
 
 A peer-to-peer file sharing application with network routing optimization, built as a learning project to explore distributed systems concepts.
 
-## 🚀 PeerShare v1.1 Update (Feb 2026)
-This update focuses on swarm stability and high-speed transfers.
-- **Dynamic Chunking**: Adjusts chunk size based on file size (up to 8MB) to reduce overhead.
-- **High-Backlog Server**: Increased socket listen limit to 100 for simultaneous requests.
-- **Network Resilience**: Implemented a 1s retry delay to prevent hanging.
-- **Optimized Latency Mapping**: Faster Dijkstra route calculations in `network.py`.
+## 🚀 PeerShare v1.1 — The "Dynamic Swarm" Update (11 Feb, 2026)
+
+This major update transforms **PeerShare** from a static client-server model into a fully decentralized, availability-aware swarm network. Peers now dynamically trade file chunks in real-time, significantly increasing transfer efficiency across the LAN.
+
+### 🛠 Swarm Intelligence & Efficiency
+* **HAVE Protocol (Bitfield Tracking):** Implemented real-time availability maps where peers broadcast a `HAVE` message as soon as they finish a chunk, allowing others to download from them immediately.
+* **Hybrid Peer Roles:** The system now identifies **Seeders** and **Leechers** during the initial handshake, allowing leechers to act as data sources the moment they acquire a piece.
+* **Intelligent Worker Threads:** Workers perform an **Availability Check** before requesting data, preventing "Empty Peer Deadlocks" by skipping peers that do not yet possess the required chunk.
+* **Dynamic Chunking:** Automatically adjusts chunk sizes—512KB for small files, 2MB for medium, and 8MB for large files—to minimize connection overhead.
+
+### ⚡ Performance & Resilience
+* **High-Backlog Server:** Increased the socket listen limit to 100, allowing peers to handle rapid, simultaneous chunk requests without dropping connections.
+* **Latency-Optimized Routing:** Streamlined `network.py` to provide faster shortest-path calculations using Dijkstra's algorithm based on real-time LAN latency.
+* **Network Resilience:** Added a 1s retry delay and CPU backoff logic to prevent worker threads from hanging or spiking CPU during high-traffic transfers.
+* **Auto-Sync GUI:** The interface now re-loads the network configuration on every download start, ensuring newly joined peers are instantly integrated into the swarm.
 
 ## ✨ Features
 - **Peer-to-Peer File Transfer**: Download files from multiple peers simultaneously.
@@ -46,3 +55,7 @@ This update focuses on swarm stability and high-speed transfers.
 ## 👥 Contributors
 - **Mahathir Mohammad** — Primary development
 - **Ahmad Ibrahim Nahian** — Logic refinement and debugging
+
+## 📋 Prerequisites
+- Python 3.8+
+- `tkinter` (usually comes with Python, but may need `sudo apt-get install python3-tk` on Linux)
