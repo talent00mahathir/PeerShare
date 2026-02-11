@@ -17,7 +17,7 @@ class Peer:
         self.ip = ip
         
         # Track what chunks other peers have: { 'PeerName': set([0, 1]) or 'ALL' }
-        self.remote_chunks = {} 
+        self.remote_chunks = {}
         
         if not os.path.exists(storage_folder):
             os.makedirs(storage_folder)
@@ -57,7 +57,7 @@ class Peer:
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             server_socket.bind((self.ip, self.port))
-            server_socket.listen(100) 
+            server_socket.listen(100) # Increased backlog
             while self.running:
                 client_socket, addr = server_socket.accept()
                 threading.Thread(target=self._handle_client, args=(client_socket,)).start()
@@ -79,9 +79,8 @@ class Peer:
                 return
 
             if cmd == 'HAVE':
-                # Dynamic update: Peer announces they have a new piece
-                p_name = parts[3]
-                c_idx = int(parts[2])
+                # Dynamic update from leechers
+                p_name, c_idx = parts[3], int(parts[2])
                 if p_name not in self.remote_chunks: self.remote_chunks[p_name] = set()
                 if self.remote_chunks[p_name] != 'ALL':
                     self.remote_chunks[p_name].add(c_idx)
@@ -94,14 +93,11 @@ class Peer:
                 return
 
             if cmd == 'TRANSFER':
-                target_peer = parts[1]
-                filename = parts[2]
-                start_byte = int(parts[3])
-                length = int(parts[4])
+                target_peer, filename, start, length = parts[1], parts[2], int(parts[3]), int(parts[4])
                 if target_peer == self.name:
-                    self._send_file_content(client_socket, filename, start_byte, length)
+                    self._send_file_content(client_socket, filename, start, length)
                 else:
-                    self._relay_file_content(client_socket, target_peer, filename, start_byte, length)
+                    self._relay_file_content(client_socket, target_peer, filename, start, length)
         except Exception:
             pass
         finally:
@@ -139,8 +135,7 @@ class Peer:
         try:
             s.connect((host, port))
             s.sendall(f"TRANSFER|{target_peer}|{filename}|{start}|{length}".encode())
-            resp = s.recv(1024)
-            if b'OK' in resp:
+            if b'OK' in s.recv(1024):
                 client_socket.sendall(b'OK')
                 relayed = 0
                 while relayed < length:
@@ -163,22 +158,22 @@ class Peer:
             except: pass
 
     def swarm_download(self, filename, seeder_list):
-        print(f"[{self.name}] 🚀 Starting Dynamic Swarm...")
+        print(f"[{self.name}] 🚀 Initiating Swarm for '{filename}'")
+        
         file_size = 0
         for peer in seeder_list:
             if peer == self.name: continue
             try:
                 host, port = self.network.peers[peer]
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(2)
-                s.connect((host, port))
+                s.settimeout(2); s.connect((host, port))
                 s.sendall(f"SIZE|{filename}".encode())
                 resp = int(s.recv(1024).decode())
                 s.close()
                 if resp > 0:
                     file_size = resp
-                    self.remote_chunks[peer] = 'ALL' # Initial seeders have it all
-                    print(f"[{self.name}] 📄 Found Seeder: {peer}")
+                    self.remote_chunks[peer] = 'ALL'
+                    print(f"[{self.name}] 📄 Metadata from {peer}: {file_size} bytes")
                 else:
                     self.remote_chunks[peer] = set()
             except: continue
@@ -189,8 +184,17 @@ class Peer:
         with open(save_path, 'wb') as f:
             f.seek(file_size - 1); f.write(b'\0')
 
-        chunk_size = 512 * 1024 if file_size < 100*1024*1024 else 2*1024*1024
+        # Dynamic chunk sizing
+        if file_size < 100 * 1024 * 1024:
+            chunk_size = 512 * 1024
+        elif file_size < 1024 * 1024 * 1024:
+            chunk_size = 2 * 1024 * 1024
+        else:
+            chunk_size = 8 * 1024 * 1024
+
         num_pieces = (file_size + chunk_size - 1) // chunk_size
+        print(f"[{self.name}] 🔢 Total Chunks: {num_pieces}")
+
         job_queue = queue.Queue()
         for i in range(num_pieces):
             job_queue.put((i, i * chunk_size, min(chunk_size, file_size - i * chunk_size)))
@@ -198,22 +202,41 @@ class Peer:
         stats = {p: 0 for p in seeder_list if p != self.name}
         file_lock = threading.Lock()
         threads = []
+        start_time = time.time()
+        
         for peer in seeder_list:
             if peer != self.name:
-                t = threading.Thread(target=self._peer_worker, args=(peer, filename, job_queue, file_lock, stats))
+                t = threading.Thread(target=self._peer_worker, args=(peer, filename, job_queue, file_lock, stats, chunk_size))
                 t.start()
                 threads.append(t)
-        
+            
         job_queue.join()
-        print(f"[{self.name}] 🎉 SUCCESS: Download Complete.")
+        
+        # Restoration of detailed technical summary
+        duration = time.time() - start_time
+        print("\n" + "="*40)
+        print(f"   🎉 DOWNLOAD COMPLETE in {duration:.2f}s")
+        print("="*40)
+        print(f"{'Source Name':<15} | {'Bytes Sent':<12} | {'Chunks':<6}")
+        print("-" * 40)
+        
+        total_bytes = 0
+        for p, b_sent in stats.items():
+            c_sent = (b_sent + chunk_size - 1) // chunk_size if b_sent > 0 else 0
+            print(f"{p:<15} | {b_sent:<12} | {c_sent:<6}")
+            total_bytes += b_sent
+            
+        print("-" * 40)
+        print(f"Total Received: {total_bytes} bytes")
+        print("="*40 + "\n")
 
-    def _peer_worker(self, peer, filename, job_queue, file_lock, stats):
+    def _peer_worker(self, peer, filename, job_queue, file_lock, stats, chunk_size):
         while not job_queue.empty():
             try:
                 c_idx, start, length = job_queue.get(timeout=1)
             except queue.Empty: break
 
-            # Availability Check
+            # Availability verification
             peer_has_it = (peer in self.remote_chunks and (self.remote_chunks[peer] == 'ALL' or c_idx in self.remote_chunks[peer]))
             
             if not peer_has_it:
@@ -228,24 +251,29 @@ class Peer:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.settimeout(5); s.connect((host, port))
                 s.sendall(f"TRANSFER|{peer}|{filename}|{start}|{length}".encode())
+                
                 if b'OK' in s.recv(1024):
                     data = b""
                     while len(data) < length:
                         pkt = s.recv(BUFFER_SIZE)
                         if not pkt: break
                         data += pkt
+                    
                     if len(data) == length:
                         with file_lock:
                             with open(os.path.join(self.storage_folder, f"downloaded_{filename}"), 'r+b') as f:
                                 f.seek(start); f.write(data)
+                        
                         stats[peer] += length
                         success = True
-                        print(f"[{self.name}] ✅ Chunk {c_idx} from {peer}")
+                        # Restored live chunk logging
+                        print(f"[{self.name}] ✅ Chunk {c_idx + 1} from {peer}")
                         threading.Thread(target=self.broadcast_have, args=(filename, c_idx)).start()
                 s.close()
             except: pass
 
-            if success: job_queue.task_done()
+            if success:
+                job_queue.task_done()
             else:
                 job_queue.put((c_idx, start, length))
                 job_queue.task_done()
