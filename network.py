@@ -7,71 +7,43 @@ class NetworkManager:
         self.peers = {}
         self.graph = {}
         self.last_update_time = 0
-        self.update_interval = 2.0 
+        self.update_interval = 3.0 # Update map every 3 seconds
 
     def add_peer(self, peer_name, host, port):
-        if peer_name not in self.peers:
-            self.peers[peer_name] = (host, port)
-
-    def remove_peer(self, peer_name):
-        if peer_name in self.peers:
-            del self.peers[peer_name]
+        self.peers[peer_name] = (host, port)
 
     def _measure_latency(self, peer_name_a, peer_name_b):
-        try:
-            addr_b = self.peers[peer_name_b]
-        except KeyError:
-            return float('inf')
-
         if peer_name_a == peer_name_b: return 0
+        addr_b = self.peers.get(peer_name_b)
+        if not addr_b: return float('inf')
 
-        ping_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # Low timeout ensures a busy peer doesn't hang the whole network update
-        ping_socket.settimeout(0.2) 
-
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.3)
         try:
-            start_time = time.perf_counter()
-            ping_socket.connect(addr_b)
-            ping_socket.sendall(b'__PING__')
-            data = ping_socket.recv(8)
-            end_time = time.perf_counter()
-
-            if data == b'__PONG__':
-                return (end_time - start_time) * 1000
-            else:
-                return float('inf')
-        except:
-            return float('inf')
-        finally:
-            ping_socket.close()
+            start = time.perf_counter()
+            s.connect(addr_b)
+            s.sendall(b'__PING__')
+            if s.recv(8) == b'__PONG__':
+                return (time.perf_counter() - start) * 1000
+        except: return float('inf')
+        finally: s.close()
+        return float('inf')
 
     def update_network_graph(self):
-        current_time = time.time()
-        if current_time - self.last_update_time < self.update_interval:
-            return
+        if time.time() - self.last_update_time < self.update_interval: return
+        new_g = {}
+        names = list(self.peers.keys())
+        for p in names:
+            new_g[p] = {}
+            for other in names:
+                if p == other: continue
+                lat = self._measure_latency(p, other)
+                if lat != float('inf'): new_g[p][other] = lat
+        self.graph = new_g
+        self.last_update_time = time.time()
 
-        new_graph = {}
-        all_peer_names = list(self.peers.keys())
-
-        for peer_name in all_peer_names:
-            new_graph[peer_name] = {}
-            for other_peer_name in all_peer_names:
-                if peer_name == other_peer_name: continue
-                cost = self._measure_latency(peer_name, other_peer_name)
-                if cost != float('inf'):
-                    new_graph[peer_name][other_peer_name] = cost
-        
-        self.graph = new_graph
-        self.last_update_time = current_time 
-
-    def get_shortest_route(self, start_peer_name, end_peer_name):
+    def get_shortest_route(self, start, end):
         self.update_network_graph()
-        
-        if start_peer_name not in self.graph or end_peer_name not in self.graph:
-            if not self.graph:
-                 self.last_update_time = 0 
-                 self.update_network_graph()
-            if start_peer_name not in self.graph or end_peer_name not in self.graph:
-                return None, float('inf')
-
-        return dijkstra(self.graph, start_peer_name, end_peer_name)
+        if start not in self.graph or end not in self.graph:
+            return None, float('inf')
+        return dijkstra(self.graph, start, end)
