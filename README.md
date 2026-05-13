@@ -52,7 +52,7 @@ This major update transforms **PeerShare** from a static client-server model int
 └── network_config.json  # Auto-generated peer mesh config
 ```
 
-## 🔧 Beginner-Friendly Update Checklist
+## 🔧 Beginner-Friendly Update Checklist :
 - Replace silent `except: pass` blocks with clear error messages.
 - Move hardcoded values (ports, delays, chunk sizes) into one config section.
 - Add a clean stop/shutdown flow so sockets and threads close properly.
