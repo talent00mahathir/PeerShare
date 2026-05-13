@@ -23,9 +23,9 @@ This major update transforms **PeerShare** from a static client-server model int
 - **Network Mesh Discovery**: Automatic connection via JSON configuration.
 - **Dijkstra-Based Routing**: Selects optimal peers based on measured latency.
 - **Dynamic Chunking Strategies**:
-  - Small (< 100MB): 64 KB
-  - Medium (100MB–1GB): 512 KB
-  - Large (> 1GB): 2 MB (Up to 8MB in v1.1)
+  - Small (< 100MB): 512 KB
+  - Medium (100MB–1GB): 2 MB
+  - Large (> 1GB): 8 MB
 - **GUI & Monitoring**: Tkinter-based manager with live console logs.
 
 ## 🛠️ Built With
@@ -50,7 +50,17 @@ This major update transforms **PeerShare** from a static client-server model int
 ├── network.py       # Network graph and latency measurement
 ├── dijkstra.py      # Shortest path algorithm
 └── network_config.json  # Auto-generated peer mesh config
+```
 
+## 🔧 Beginner-Friendly Update Checklist
+- Replace silent `except: pass` blocks with clear error messages.
+- Move hardcoded values (ports, delays, chunk sizes) into one config section.
+- Add a clean stop/shutdown flow so sockets and threads close properly.
+- Split long methods (like `swarm_download`) into smaller helper functions.
+- Add basic input checks in GUI fields (file name, peer list, IP, port).
+- Use simple logging levels (`INFO`, `WARNING`, `ERROR`) instead of only `print`.
+- Keep README values synced with real code behavior when logic changes.
+- Add a few starter tests (e.g., Dijkstra path and chunk size selection).
 
 ## 👥 Contributors
 - **Mahathir Mohammad** — Primary development
